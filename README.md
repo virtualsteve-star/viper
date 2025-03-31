@@ -22,7 +22,7 @@ Viper is an action-packed arcade game where you pilot a spacecraft through dange
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/YOUR_USERNAME/Viper.git
+git clone https://github.com/virtualsteve-star/viper.git
 cd Viper
 ```
 
