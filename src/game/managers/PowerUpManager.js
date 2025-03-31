@@ -46,8 +46,8 @@ export default class PowerUpManager {
 
             // Update rotations
             if (powerUp.type === 'STARGATE') {
-                powerUp.rotation = (powerUp.rotation + 180 * deltaTime) % 360; // Base rotation speed (same as splash screen)
-                powerUp.vortexRotation = (powerUp.vortexRotation + 360 * deltaTime) % 360; // Double speed for vortex
+                powerUp.rotation = (powerUp.rotation + 15 * deltaTime) % 360; // 15 degrees per second (same as splash screen)
+                powerUp.vortexRotation = (powerUp.vortexRotation + 30 * deltaTime) % 360; // 30 degrees per second (2x stargate speed)
             } else if (powerUp.type === 'FREE_LIFE') {
                 powerUp.rotation = (powerUp.rotation + 90 * deltaTime) % 360;
             }

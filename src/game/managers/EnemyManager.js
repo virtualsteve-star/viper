@@ -304,7 +304,7 @@ export default class EnemyManager {
                 
                 // Set up rotation for drones
                 if (enemy.type === 'DRONE') {
-                    enemy.rotation = (enemy.rotation + 2) % 360; // Increased from 0.5 to 2 degrees per frame for faster rotation
+                    enemy.rotation = (enemy.rotation - 2) % 360; // Changed to negative for opposite rotation
                     ctx.translate(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
                     ctx.rotate(enemy.rotation * Math.PI / 180);
                     ctx.drawImage(sprite.image, -enemy.width/2, -enemy.height/2, enemy.width, enemy.height);

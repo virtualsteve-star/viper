@@ -216,7 +216,68 @@ export default class Player {
             // Enable high-quality image rendering
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            // Flip sprite based on direction
+
+            // Draw thrust first (behind the ship)
+            if (this.thrustOpacity > 0) {
+                const isFullThrust = this.thrustLength === 1;
+                
+                // Engine position relative to sprite (about 15% from the edge)
+                const engineOffset = this.width * 0.15;
+                const thrustWidth = isFullThrust ? this.width * 0.7 : this.width * 0.4; // Longer thrust when moving
+                const thrustBaseWidth = this.height * 0.3; // Slightly wider base
+                const thrustEndWidth = thrustBaseWidth * (isFullThrust ? 0.25 : 0.5); // Narrower for full thrust
+                
+                // Create thrust gradient
+                const thrustGradient = ctx.createLinearGradient(
+                    engineOffset, this.height/2,
+                    engineOffset - thrustWidth, this.height/2
+                );
+                
+                if (isFullThrust) {
+                    // More intense full thrust
+                    thrustGradient.addColorStop(0, 'rgba(255, 255, 200, 1.0)'); // Brighter core
+                    thrustGradient.addColorStop(0.2, 'rgba(255, 165, 0, 0.95)');
+                    thrustGradient.addColorStop(0.6, 'rgba(255, 100, 0, 0.8)');
+                    thrustGradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
+                } else {
+                    // More visible idle thrust
+                    thrustGradient.addColorStop(0, 'rgba(255, 200, 0, 0.9)');
+                    thrustGradient.addColorStop(0.3, 'rgba(255, 140, 0, 0.7)');
+                    thrustGradient.addColorStop(0.7, 'rgba(255, 80, 0, 0.4)');
+                    thrustGradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
+                }
+
+                // Apply direction-based transform
+                if (this.direction === -1) {
+                    ctx.scale(-1, 1);
+                    ctx.translate(-this.x - this.width, this.y);
+                } else {
+                    ctx.translate(this.x, this.y);
+                }
+                
+                // Draw thrust with proper opacity
+                ctx.globalAlpha = this.thrustOpacity * this.fadeOpacity;
+                
+                // Draw thrust shape
+                ctx.beginPath();
+                ctx.moveTo(engineOffset, this.height/2 - thrustBaseWidth/2);
+                ctx.lineTo(engineOffset - thrustWidth, this.height/2 - thrustEndWidth/2);
+                ctx.lineTo(engineOffset - thrustWidth, this.height/2 + thrustEndWidth/2);
+                ctx.lineTo(engineOffset, this.height/2 + thrustBaseWidth/2);
+                ctx.closePath();
+                
+                ctx.fillStyle = thrustGradient;
+                ctx.fill();
+                
+                // Reset transform for sprite
+                ctx.restore();
+                ctx.save();
+                ctx.globalAlpha = this.fadeOpacity;
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+            }
+
+            // Draw the Viper sprite
             if (this.direction === -1) {
                 ctx.scale(-1, 1);
                 ctx.translate(-this.x - this.width, this.y);
@@ -224,51 +285,6 @@ export default class Player {
                 ctx.translate(this.x, this.y);
             }
             ctx.drawImage(sprite.image, 0, 0, this.width, this.height);
-            ctx.restore();
-        }
-
-        // Draw thrust effect if active
-        if (this.thrustOpacity > 0) {
-            ctx.save();
-            ctx.globalAlpha = this.thrustOpacity * this.fadeOpacity;
-            
-            // Calculate thrust position based on direction
-            const thrustX = this.direction === 1 ? 
-                this.x - 20 : // Thrust comes from left when moving right
-                this.x + this.width + 20; // Thrust comes from right when moving left
-            
-            // Create thrust gradient - direction depends on thrust state
-            const isFullThrust = this.thrustLength === 1;
-            const thrustGradient = ctx.createLinearGradient(
-                isFullThrust ? thrustX : thrustX + (this.direction * 40 * this.thrustLength),
-                this.y + this.height/2,
-                isFullThrust ? thrustX + (this.direction * 40 * this.thrustLength) : thrustX,
-                this.y + this.height/2
-            );
-            
-            // Color stops based on thrust state
-            if (isFullThrust) {
-                // Full thrust - brightest at start (near Viper)
-                thrustGradient.addColorStop(0, 'rgba(255, 50, 0, 0)'); // Transparent at start
-                thrustGradient.addColorStop(0.7, 'rgba(255, 100, 0, 0.7)'); // Bright in middle
-                thrustGradient.addColorStop(1, 'rgba(255, 165, 0, 0.9)'); // Brightest at end (near Viper)
-            } else {
-                // Idle thrust - brightest at end (near Viper)
-                thrustGradient.addColorStop(0, 'rgba(255, 165, 0, 0.9)'); // Brightest at start
-                thrustGradient.addColorStop(0.3, 'rgba(255, 100, 0, 0.7)'); // Still bright in middle
-                thrustGradient.addColorStop(1, 'rgba(255, 50, 0, 0)'); // Fade to transparent at end
-            }
-            
-            // Draw thrust with wider base near Viper
-            ctx.beginPath();
-            ctx.moveTo(thrustX, this.y + this.height/2 - 15); // Wider base near Viper
-            ctx.lineTo(thrustX + (this.direction * 40 * this.thrustLength), this.y + this.height/2 - 5); // Narrower at end
-            ctx.lineTo(thrustX + (this.direction * 40 * this.thrustLength), this.y + this.height/2 + 5); // Narrower at end
-            ctx.lineTo(thrustX, this.y + this.height/2 + 15); // Wider base near Viper
-            ctx.closePath();
-            ctx.fillStyle = thrustGradient;
-            ctx.fill();
-            
             ctx.restore();
         }
 
