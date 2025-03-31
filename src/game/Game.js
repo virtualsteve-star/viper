@@ -5,14 +5,12 @@ import PowerUpManager from './managers/PowerUpManager';
 import AudioManager from './managers/AudioManager';
 import SpriteLoader from './utils/SpriteLoader';
 import Starfield from './entities/Starfield';
-import { GAME_STATES } from './constants';
-import { PLAYER_CONFIG } from './constants';
+import { GAME_STATES, PLAYER_CONFIG, POWER_UP_CONFIG } from './constants';
 
 export default class Game {
-    constructor(canvas, ctx, gameUI) {
+    constructor(canvas, ctx) {
         this.canvas = canvas;
         this.ctx = ctx;
-        this.gameUI = gameUI;
         
         // Initialize sprite loader
         this.spriteLoader = new SpriteLoader();
@@ -251,9 +249,6 @@ export default class Game {
                     }
                 }
             }
-
-            // Update UI
-            this.updateUI();
         }
     }
 
@@ -300,10 +295,6 @@ export default class Game {
             // Regular death
             this.player.die();
         }
-    }
-
-    updateUI() {
-        this.gameUI.textContent = `Lives: ${'❤️'.repeat(Math.max(0, this.lives))} | Shield: ${Math.max(0, Math.ceil(this.shieldTime))}s | Score: ${this.score} | Level: ${this.level}`;
     }
 
     render() {
@@ -452,13 +443,82 @@ export default class Game {
     }
 
     renderGame() {
-        // Render terrain
+        // Draw game elements
         this.terrain.render(this.ctx);
-
-        // Render entities
         this.player.render(this.ctx);
         this.enemyManager.render(this.ctx);
         this.powerUpManager.render(this.ctx);
+
+        // Draw dashboard
+        this.renderDashboard();
+    }
+
+    renderDashboard() {
+        const padding = 20;
+        const topMargin = 20;
+        
+        // Draw score
+        this.ctx.save();
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '24px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.fillText(`Score: ${this.score}`, padding, topMargin + 10);
+        
+        // Draw lives as tiny Vipers
+        const sprite = this.spriteLoader.getSprite('viper');
+        if (sprite) {
+            const viperWidth = 30; // Small fixed size for UI
+            const viperHeight = (sprite.height / sprite.width) * viperWidth;
+            const spacing = viperWidth + 10;
+            
+            for (let i = 0; i < this.lives; i++) {
+                this.ctx.save();
+                // Enable high-quality image rendering
+                this.ctx.imageSmoothingEnabled = true;
+                this.ctx.imageSmoothingQuality = 'high';
+                this.ctx.drawImage(sprite.image, 
+                    this.canvas.width - padding - (this.lives - i) * spacing, 
+                    topMargin, 
+                    viperWidth, 
+                    viperHeight
+                );
+                this.ctx.restore();
+            }
+        }
+        
+        // Draw shield meter
+        if (this.shieldTime > 0) {
+            const meterWidth = 150;
+            const meterHeight = 20;
+            const x = this.canvas.width / 2 - meterWidth / 2;
+            const y = topMargin;
+            const fillPercent = Math.max(0, Math.min(1, this.shieldTime / POWER_UP_CONFIG.SHIELD.DURATION));
+            
+            // Draw meter background
+            this.ctx.fillStyle = '#000000';
+            this.ctx.fillRect(x, y, meterWidth, meterHeight);
+            
+            // Draw meter fill
+            const gradient = this.ctx.createLinearGradient(x, y, x + meterWidth * fillPercent, y);
+            gradient.addColorStop(0, '#00ffff'); // Bright blue
+            gradient.addColorStop(1, '#0066ff'); // Darker blue
+            this.ctx.fillStyle = gradient;
+            this.ctx.fillRect(x, y, meterWidth * fillPercent, meterHeight);
+            
+            // Draw meter border
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(x, y, meterWidth, meterHeight);
+            
+            // Draw "SHIELD" text - centered both horizontally and vertically
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '14px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle'; // This ensures vertical centering
+            this.ctx.fillText('SHIELD', x + meterWidth / 2, y + meterHeight / 2);
+        }
+        
+        this.ctx.restore();
     }
 
     renderGameOver() {

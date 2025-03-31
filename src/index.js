@@ -5,7 +5,6 @@ import './styles.css';
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    const gameUI = document.getElementById('gameUI');
 
     // Enable image smoothing for better quality
     ctx.imageSmoothingEnabled = true;
@@ -23,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(loadingMessage);
 
     // Create and initialize the game
-    const game = new Game(canvas, ctx, gameUI);
+    const game = new Game(canvas, ctx);
 
     // Remove loading message when sprites are loaded
     const checkLoading = setInterval(() => {
