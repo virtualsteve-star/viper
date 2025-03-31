@@ -309,7 +309,10 @@ export default class EnemyManager {
                     ctx.rotate(enemy.rotation * Math.PI / 180);
                     ctx.drawImage(sprite.image, -enemy.width/2, -enemy.height/2, enemy.width, enemy.height);
                 } else {
-                    ctx.drawImage(sprite.image, enemy.x, enemy.y, enemy.width, enemy.height);
+                    // For Killers, flip the sprite based on direction (inverted to face the Viper)
+                    ctx.translate(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
+                    ctx.scale(-enemy.direction, 1); // Invert direction to face towards Viper
+                    ctx.drawImage(sprite.image, -enemy.width/2, -enemy.height/2, enemy.width, enemy.height);
                 }
                 ctx.restore();
             } else {
