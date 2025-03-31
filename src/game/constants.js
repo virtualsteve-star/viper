@@ -1,5 +1,6 @@
 export const GAME_STATES = {
     START: 'START',
+    GET_READY: 'GET_READY',
     PLAYING: 'PLAYING',
     GAME_OVER: 'GAME_OVER'
 };

@@ -34,6 +34,20 @@ export default class Game {
         this.splashFadeSpeed = 0.5; // Fade cycle speed
         this.titlePulse = 0; // For title color pulsing
         this.stargateRotation = 0; // For background stargate rotation
+
+        // Add restart text animation properties
+        this.restartAlpha = 1;
+        this.restartFadeDirection = -1;
+        this.restartFadeSpeed = 0.5;
+
+        // Banner animation properties
+        this.getReadyAlpha = 0;
+        this.getReadyFadeSpeed = 2; // How fast the Get Ready banner fades in/out
+        this.getReadyFlashCount = 0;
+        this.getReadyMaxFlashes = 3;
+        this.getReadyPhase = 0; // 0: fade in, 1: hold, 2: fade out
+        this.getReadyTimer = 0;
+        this.getReadyHoldTime = 0.5; // How long to hold the banner visible
         
         // Game entities and managers will be initialized after sprites are loaded
         this.initializeGameObjects();
@@ -78,9 +92,12 @@ export default class Game {
         window.addEventListener('keydown', (e) => {
             this.keys[e.key.toLowerCase()] = true;
             if (e.key === ' ' && this.state === GAME_STATES.START) {
-                console.log('Space pressed, transitioning from START to PLAYING state');
-                this.state = GAME_STATES.PLAYING;
-                console.log('New game state:', this.state);
+                // Start the Get Ready sequence and switch to gameplay music
+                this.state = GAME_STATES.GET_READY;
+                this.getReadyFlashCount = 0;
+                this.getReadyPhase = 0;
+                this.getReadyTimer = 0;
+                this.getReadyAlpha = 0;
                 this.audioManager.playBackgroundMusic(GAME_STATES.PLAYING);
             } else if (e.key.toLowerCase() === 'r') {
                 if (this.state === GAME_STATES.GAME_OVER) {
@@ -163,12 +180,72 @@ export default class Game {
 
             // Update title pulse and stargate rotation
             this.titlePulse = (this.titlePulse + deltaTime) % (Math.PI * 2);
-            this.stargateRotation = (this.stargateRotation + deltaTime * 15) % 360; // Slower rotation (15 degrees per second)
-            return; // Don't process any game logic during splash screen
+            this.stargateRotation = (this.stargateRotation + deltaTime * 15) % 360;
+            return;
         }
         
         if (this.state === GAME_STATES.GAME_OVER) {
-            return; // Don't process any game logic during game over
+            // Update restart text fade effect
+            this.restartAlpha += this.restartFadeDirection * deltaTime * this.restartFadeSpeed;
+            if (this.restartAlpha <= 0.3) {
+                this.restartAlpha = 0.3;
+                this.restartFadeDirection = 1;
+            } else if (this.restartAlpha >= 1) {
+                this.restartAlpha = 1;
+                this.restartFadeDirection = -1;
+            }
+            return;
+        }
+
+        // Update Get Ready banner animation
+        if (this.state === GAME_STATES.GET_READY) {
+            // Update starfield during Get Ready
+            this.starfield.update(deltaTime);
+            
+            this.getReadyTimer += deltaTime;
+            
+            switch (this.getReadyPhase) {
+                case 0: // Fade in
+                    this.getReadyAlpha += deltaTime * this.getReadyFadeSpeed;
+                    if (this.getReadyAlpha >= 1) {
+                        this.getReadyAlpha = 1;
+                        this.getReadyPhase = 1;
+                        this.getReadyTimer = 0;
+                    }
+                    break;
+                case 1: // Hold
+                    if (this.getReadyTimer >= this.getReadyHoldTime) {
+                        this.getReadyPhase = 2;
+                        this.getReadyTimer = 0;
+                    }
+                    break;
+                case 2: // Fade out
+                    this.getReadyAlpha -= deltaTime * this.getReadyFadeSpeed;
+                    if (this.getReadyAlpha <= 0) {
+                        this.getReadyAlpha = 0;
+                        this.getReadyPhase = 0;
+                        this.getReadyTimer = 0;
+                        this.getReadyFlashCount++;
+                        
+                        if (this.getReadyFlashCount >= this.getReadyMaxFlashes) {
+                            // Start the game after all flashes
+                            this.state = GAME_STATES.PLAYING;
+                            this.getReadyFlashCount = 0;
+                            this.getReadyPhase = 0;
+                            this.getReadyTimer = 0;
+                            this.getReadyAlpha = 0;
+                            
+                            // If this was a level up sequence, clear the level up flag
+                            if (this.isLevelUp) {
+                                this.isLevelUp = false;
+                                this.levelUpPhase = 0;
+                                this.levelUpTimer = 0;
+                            }
+                        }
+                    }
+                    break;
+            }
+            return; // Don't process other game logic during Get Ready
         }
 
         // Only process game logic if we're in PLAYING state
@@ -178,29 +255,22 @@ export default class Game {
             this.starfield.update(deltaTime);
 
             // Handle level-up sequence
-            if (this.isLevelUp) {
-                console.log('Level up sequence active, phase:', this.levelUpPhase);
-                this.levelUpTimer += deltaTime;
+            if (this.state === GAME_STATES.PLAYING && this.isLevelUp) {
+                // Reset player position and clear enemies/power-ups
+                this.player.reset();
+                this.enemyManager.clearEnemies();
+                this.powerUpManager.clearPowerUps();
                 
-                if (this.levelUpTimer >= this.levelUpDuration) {
-                    this.levelUpTimer = 0;
-                    this.levelUpPhase++;
-                    
-                    if (this.levelUpPhase === 1) {
-                        // Reset player position and clear enemies/power-ups
-                        this.player.reset();
-                        this.enemyManager.clearEnemies();
-                        this.powerUpManager.clearPowerUps();
-                    } else if (this.levelUpPhase === 2) {
-                        // Complete level up sequence
-                        this.isLevelUp = false;
-                        this.levelUpPhase = 0;
-                        this.levelUpTimer = 0;
-                        this.player.isDead = false;
-                        this.state = GAME_STATES.PLAYING;
-                    }
-                }
-                return; // Pause game during level-up sequence
+                // Hide the stargate before starting Get Ready sequence
+                this.powerUpManager.stargateEffect = null;
+                
+                // Start the Get Ready sequence for the new level
+                this.state = GAME_STATES.GET_READY;
+                this.getReadyFlashCount = 0;
+                this.getReadyPhase = 0;
+                this.getReadyTimer = 0;
+                this.getReadyAlpha = 0;
+                return;
             }
 
             // Update player
@@ -308,31 +378,42 @@ export default class Game {
                 this.starfield.render(this.ctx);
                 this.renderStartScreen();
                 break;
-            case GAME_STATES.PLAYING:
-                // Draw starfield first
+            case GAME_STATES.GET_READY:
+                // Draw all game elements first
                 this.starfield.render(this.ctx);
-                this.renderGame();
-                // Render level-up messages if in level-up sequence
-                if (this.isLevelUp) {
-                    this.ctx.fillStyle = '#ffffff';
-                    this.ctx.font = '48px Arial';
-                    this.ctx.textAlign = 'center';
+                this.terrain.render(this.ctx);
+                this.player.render(this.ctx);
+                this.renderDashboard();
+                
+                // Then draw the Get Ready banner on top
+                const getReady = this.spriteLoader.getSprite('getReady');
+                if (getReady) {
+                    this.ctx.save();
+                    this.ctx.imageSmoothingEnabled = true;
+                    this.ctx.imageSmoothingQuality = 'high';
                     
-                    switch (this.levelUpPhase) {
-                        case 0:
-                            this.ctx.fillText('LEVEL UP!', this.canvas.width / 2, this.canvas.height / 2);
-                            break;
-                        case 1:
-                            this.ctx.fillText(`Get Ready for Level ${this.level}`, this.canvas.width / 2, this.canvas.height / 2);
-                            this.ctx.font = '36px Arial';
-                            this.ctx.fillText('READY PLAYER ONE', this.canvas.width / 2, this.canvas.height / 2 + 50);
-                            break;
-                    }
+                    // Scale banner to be about 30% of canvas width
+                    const bannerScale = this.canvas.width * 0.3 / getReady.width;
+                    const bannerWidth = getReady.width * bannerScale;
+                    const bannerHeight = getReady.height * bannerScale;
+                    
+                    // Center the banner
+                    this.ctx.globalAlpha = this.getReadyAlpha;
+                    this.ctx.drawImage(
+                        getReady.image,
+                        this.canvas.width/2 - bannerWidth/2,
+                        this.canvas.height/2 - bannerHeight/2,
+                        bannerWidth,
+                        bannerHeight
+                    );
+                    
+                    this.ctx.restore();
                 }
                 break;
+            case GAME_STATES.PLAYING:
+                this.renderGame();
+                break;
             case GAME_STATES.GAME_OVER:
-                // Draw starfield first
-                this.starfield.render(this.ctx);
                 this.renderGameOver();
                 break;
         }
@@ -420,37 +501,86 @@ export default class Game {
             this.ctx.restore();
         }
 
-        // Draw game title above stargate
-        this.ctx.fillStyle = '#ff0000';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        
-        // Draw main title with shadow for depth
-        this.ctx.font = '80px "Press Start 2P", "Orbitron", monospace';
-        this.ctx.shadowColor = 'rgba(255, 0, 0, 0.5)';
-        this.ctx.shadowBlur = 10;
-        this.ctx.shadowOffsetX = 0;
-        this.ctx.shadowOffsetY = 0;
-        this.ctx.fillText('VIPER', centerX, centerY - 200);
+        // Draw game title banner above stargate
+        const viperTitle = this.spriteLoader.getSprite('viperTitle');
+        if (viperTitle) {
+            this.ctx.save();
+            this.ctx.imageSmoothingEnabled = true;
+            this.ctx.imageSmoothingQuality = 'high';
+            
+            // Scale title to be about 40% of canvas width
+            const titleScale = this.canvas.width * 0.4 / viperTitle.width;
+            const titleWidth = viperTitle.width * titleScale;
+            const titleHeight = viperTitle.height * titleScale;
+            
+            // Draw title with shadow for depth
+            this.ctx.shadowColor = 'rgba(255, 0, 0, 0.5)';
+            this.ctx.shadowBlur = 10;
+            this.ctx.shadowOffsetX = 0;
+            this.ctx.shadowOffsetY = 0;
+            
+            this.ctx.drawImage(
+                viperTitle.image,
+                centerX - titleWidth/2,
+                centerY - 200 - titleHeight/2,
+                titleWidth,
+                titleHeight
+            );
+            
+            this.ctx.restore();
+        }
 
-        // Reset shadow for other text
-        this.ctx.shadowColor = 'transparent';
-        
         // Draw fading "Press Space" text below stargate
         this.ctx.font = '24px Arial';
         this.ctx.fillStyle = `rgba(255, 255, 255, ${this.splashAlpha})`;
-        this.ctx.fillText('PRESS SPACE TO START', centerX, centerY + 200);
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('PRESS SPACE TO START', centerX, centerY + 250);
     }
 
     renderGame() {
-        // Draw game elements
+        // Draw starfield first
+        this.starfield.render(this.ctx);
+        
+        // Draw terrain
         this.terrain.render(this.ctx);
-        this.player.render(this.ctx);
-        this.enemyManager.render(this.ctx);
+        
+        // Draw power-ups
         this.powerUpManager.render(this.ctx);
-
+        
+        // Draw enemies
+        this.enemyManager.render(this.ctx);
+        
+        // Draw player
+        this.player.render(this.ctx);
+        
         // Draw dashboard
         this.renderDashboard();
+
+        // Render level-up banner if active
+        if (this.isLevelUp) {
+            const levelUp = this.spriteLoader.getSprite('levelUp');
+            if (levelUp) {
+                this.ctx.save();
+                this.ctx.imageSmoothingEnabled = true;
+                this.ctx.imageSmoothingQuality = 'high';
+                
+                // Scale banner to be about 30% of canvas width
+                const bannerScale = this.canvas.width * 0.3 / levelUp.width;
+                const bannerWidth = levelUp.width * bannerScale;
+                const bannerHeight = levelUp.height * bannerScale;
+                
+                // Center the banner
+                this.ctx.drawImage(
+                    levelUp.image,
+                    this.canvas.width/2 - bannerWidth/2,
+                    this.canvas.height/2 - bannerHeight/2,
+                    bannerWidth,
+                    bannerHeight
+                );
+                
+                this.ctx.restore();
+            }
+        }
     }
 
     renderDashboard() {
@@ -522,12 +652,41 @@ export default class Game {
     }
 
     renderGameOver() {
-        this.ctx.fillStyle = '#fff';
-        this.ctx.font = '48px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2);
+        // Draw starfield first
+        this.starfield.render(this.ctx);
+        
+        // Draw terrain
+        this.terrain.render(this.ctx);
+        
+        // Draw game over banner
+        const gameOver = this.spriteLoader.getSprite('gameOver');
+        if (gameOver) {
+            this.ctx.save();
+            this.ctx.imageSmoothingEnabled = true;
+            this.ctx.imageSmoothingQuality = 'high';
+            
+            // Scale banner to be about 40% of canvas width
+            const bannerScale = this.canvas.width * 0.4 / gameOver.width;
+            const bannerWidth = gameOver.width * bannerScale;
+            const bannerHeight = gameOver.height * bannerScale;
+            
+            // Center the banner
+            this.ctx.drawImage(
+                gameOver.image,
+                this.canvas.width/2 - bannerWidth/2,
+                this.canvas.height/2 - bannerHeight/2,
+                bannerWidth,
+                bannerHeight
+            );
+            
+            this.ctx.restore();
+        }
+
+        // Draw flashing restart instruction much lower
         this.ctx.font = '24px Arial';
-        this.ctx.fillText('Press R to Restart', this.canvas.width / 2, this.canvas.height / 2 + 50);
+        this.ctx.fillStyle = `rgba(255, 255, 255, ${this.restartAlpha})`;
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('Press R to Restart', this.canvas.width / 2, this.canvas.height - 100);
     }
 
     reset() {
@@ -539,5 +698,20 @@ export default class Game {
         this.isRespawned = false;
         this.fadeOpacity = 1;
         this.isFading = false;
+    }
+
+    handleKeyPress(event) {
+        if (event.code === 'Space') {
+            if (this.state === GAME_STATES.START) {
+                // Start the Get Ready sequence
+                this.state = GAME_STATES.GET_READY;
+                this.getReadyFlashCount = 0;
+                this.getReadyPhase = 0;
+                this.getReadyTimer = 0;
+                this.getReadyAlpha = 0;
+            }
+        } else if (event.code === 'KeyR' && this.state === GAME_STATES.GAME_OVER) {
+            this.reset();
+        }
     }
 } 

@@ -29,7 +29,11 @@ export default class SpriteLoader {
                 this.loadSprite('shield', 'public/sprites/ShieldPowerup.png'),
                 this.loadSprite('life', 'public/sprites/ExtraLife.png'),
                 this.loadSprite('stargate', 'public/sprites/Stargate.png'),
-                this.loadSprite('vortex', 'public/sprites/StargateVortex.png')
+                this.loadSprite('vortex', 'public/sprites/StargateVortex.png'),
+                this.loadSprite('viperTitle', 'public/banners/ViperTitle.png'),
+                this.loadSprite('getReady', 'public/banners/GetReady.png'),
+                this.loadSprite('levelUp', 'public/banners/LevelUp.png'),
+                this.loadSprite('gameOver', 'public/banners/GameOver.png')
             ]);
             this.loaded = true;
         } catch (error) {
