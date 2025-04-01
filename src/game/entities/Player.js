@@ -76,7 +76,7 @@ export default class Player {
         }
 
         // Only process movement and new shots in PLAYING state
-        if (this.game.state !== GAME_STATES.PLAYING) return;
+        if (this.game.stateManager.state !== GAME_STATES.PLAYING) return;
 
         // Handle movement
         if (inputHandler.isKeyPressed('arrowup') || inputHandler.isKeyPressed('w')) {

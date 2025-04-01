@@ -1,17 +1,14 @@
 export default class InputHandler {
     constructor() {
         this.keys = {};
-        this.setupEventListeners();
     }
 
-    setupEventListeners() {
-        window.addEventListener('keydown', (e) => {
-            this.keys[e.key.toLowerCase()] = true;
-        });
+    handleKeyDown(event) {
+        this.keys[event.key.toLowerCase()] = true;
+    }
 
-        window.addEventListener('keyup', (e) => {
-            this.keys[e.key.toLowerCase()] = false;
-        });
+    handleKeyUp(event) {
+        this.keys[event.key.toLowerCase()] = false;
     }
 
     isKeyPressed(key) {

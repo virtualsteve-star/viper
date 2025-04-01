@@ -2,6 +2,7 @@ export const GAME_STATES = {
     START: 'START',
     GET_READY: 'GET_READY',
     PLAYING: 'PLAYING',
+    LEVEL_UP: 'LEVEL_UP',
     GAME_OVER: 'GAME_OVER'
 };
 

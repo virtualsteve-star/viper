@@ -40,7 +40,7 @@ export default class Terrain {
 
     update(deltaTime) {
         // Only scroll terrain if we're in PLAYING state
-        if (this.game.state === GAME_STATES.PLAYING) {
+        if (this.game.stateManager.state === GAME_STATES.PLAYING) {
             this.scrollOffset -= TERRAIN_CONFIG.SCROLL_SPEED * deltaTime * this.game.player.direction;
         }
 

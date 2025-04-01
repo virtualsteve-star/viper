@@ -13,14 +13,14 @@ export default class EnemyManager {
 
     update(deltaTime) {
         // Only spawn enemies if game is in PLAYING state
-        if (this.game.state !== GAME_STATES.PLAYING) {
-            console.log('Game not in PLAYING state, current state:', this.game.state);
+        if (!this.game.stateManager || this.game.stateManager.state !== GAME_STATES.PLAYING) {
+            console.log('Game not in PLAYING state, current state:', this.game.stateManager ? this.game.stateManager.state : 'undefined');
             return;
         }
 
         // Update spawn timer
         this.spawnTimer += deltaTime;
-        console.log('Game state:', this.game.state, 'Level:', this.game.level, 'Spawn timer:', this.spawnTimer.toFixed(2), 'Interval:', this.getSpawnInterval().toFixed(2));
+        console.log('Game state:', this.game.stateManager.state, 'Level:', this.game.level, 'Spawn timer:', this.spawnTimer.toFixed(2), 'Interval:', this.getSpawnInterval().toFixed(2));
 
         // Spawn enemies
         if (this.spawnTimer >= this.getSpawnInterval()) {

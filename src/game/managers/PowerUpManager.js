@@ -14,26 +14,29 @@ export default class PowerUpManager {
         this.gameTime += deltaTime;
         this.spawnTimer += deltaTime;
 
-        // Update power-ups
-        this.powerUps = this.powerUps.filter(powerUp => {
-            // Move power-up horizontally based on direction
-            powerUp.x += powerUp.speed * deltaTime * powerUp.direction;
+        // Log game state every 5 seconds
+        if (Math.floor(this.gameTime / 5) > Math.floor((this.gameTime - deltaTime) / 5)) {
+            console.log('Game state:', {
+                level: this.game.level,
+                gameTime: this.gameTime.toFixed(1),
+                isLevelUp: this.game.isLevelUp,
+                hasStargateEffect: !!this.stargateEffect,
+                existingStargate: this.powerUps.some(p => p.type === 'STARGATE')
+            });
+        }
 
-            // Update rotations for regular power-ups
+        // Update existing power-ups
+        this.powerUps = this.powerUps.filter(powerUp => {
+            // Update position
+            powerUp.x += powerUp.speed * powerUp.direction * deltaTime;
+            
+            // Update rotations for stargate
             if (powerUp.type === 'STARGATE') {
                 powerUp.rotation = (powerUp.rotation || 0) + Math.PI * deltaTime;
                 powerUp.vortexRotation = (powerUp.vortexRotation || 0) + Math.PI * 2 * deltaTime;
             }
-
-            // Only check terrain collision for non-Stargate power-ups
-            if (powerUp.type !== 'STARGATE') {
-                const terrainHeight = this.game.terrain.getHeightAt(powerUp.x + powerUp.width/2);
-                if (powerUp.y + powerUp.height > this.game.canvas.height - terrainHeight) {
-                    return false;
-                }
-            }
-
-            // Fix off-screen check logic
+            
+            // Check if power-up is off screen
             if (powerUp.direction === 1) {
                 if (powerUp.x > this.game.canvas.width + powerUp.width + 100) {
                     return false;
@@ -46,40 +49,40 @@ export default class PowerUpManager {
             return true;
         });
 
-        // Update stargate effect
-        if (this.stargateEffect) {
+        // Only update stargate effect if we're in LEVEL_UP state
+        if (this.stargateEffect && this.game.stateManager.state === GAME_STATES.LEVEL_UP) {
             this.stargateEffect.time += deltaTime;
-            
-            // Update rotations (in radians)
-            this.stargateEffect.rotation = (this.stargateEffect.rotation || 0) + Math.PI * deltaTime;
             this.stargateEffect.vortexRotation = (this.stargateEffect.vortexRotation || 0) + Math.PI * 2 * deltaTime;
+            this.stargateEffect.rotation = (this.stargateEffect.rotation || 0) + Math.PI * deltaTime;
             
             // Always expand the radius during the effect
             const maxRadius = Math.max(this.game.canvas.width, this.game.canvas.height) * 1.5;
             this.stargateEffect.radius = Math.min(
-                this.stargateEffect.radius + 500 * deltaTime, // Slowed down expansion speed from 600 to 500
+                this.stargateEffect.radius + 500 * deltaTime,
                 maxRadius
             );
-            
-            // Only fade out after level-up is complete and GET_READY is starting
-            if (this.stargateEffect.levelUpStarted) {
-                this.stargateEffect.opacity = Math.max(0, this.stargateEffect.opacity - deltaTime * 0.7); // Slowed down fade out
-                if (this.stargateEffect.opacity <= 0) {
-                    this.stargateEffect = null;
-                }
-            }
         }
 
-        // Spawn power-ups
-        if (this.spawnTimer >= this.getSpawnInterval()) {
-            this.spawnPowerUp();
-            this.spawnTimer = 0;
+        // Only spawn power-ups if we're in PLAYING state
+        if (this.game.stateManager.state === GAME_STATES.PLAYING) {
+            // Spawn power-ups
+            if (this.spawnTimer >= this.getSpawnInterval()) {
+                this.spawnPowerUp();
+                this.spawnTimer = 0;
+            }
         }
 
         // Only check for stargate spawn if we're not in a level-up sequence
         // and there's no active stargate effect
         if (!this.game.isLevelUp && !this.stargateEffect && 
             this.gameTime >= 30 && !this.powerUps.some(p => p.type === 'STARGATE')) {
+            console.log('Stargate spawn conditions met:', {
+                level: this.game.level,
+                isLevelUp: this.game.isLevelUp,
+                hasStargateEffect: !!this.stargateEffect,
+                gameTime: this.gameTime.toFixed(1),
+                existingStargate: this.powerUps.some(p => p.type === 'STARGATE')
+            });
             this.spawnStargate();
         }
     }
@@ -204,7 +207,7 @@ export default class PowerUpManager {
                 // Create stargate effect
                 const stargate = this.powerUps.find(p => p.type === 'STARGATE');
                 if (stargate) {
-                    // Keep the same size as the original stargate
+                    // Keep the same position and size as the original stargate
                     this.stargateEffect = {
                         x: stargate.x + stargate.width/2,
                         y: stargate.y + stargate.height/2,
@@ -215,44 +218,49 @@ export default class PowerUpManager {
                         time: 0,
                         rotation: stargate.rotation || 0,
                         vortexRotation: stargate.vortexRotation || 0,
-                        levelUpStarted: false, // Track if level-up has started
-                        showLevelUp: true // Flag to show level up banner
+                        levelUpStarted: false,
+                        showLevelUp: true
                     };
 
                     // Make the player start fading
                     this.game.player.startFadeOut();
                     
-                    // Show Level Up banner immediately
-                    this.game.isLevelUp = true;
-                    this.game.levelUpStartTime = this.game.currentTime;
+                    // Clear all power-ups except the stargate
+                    this.powerUps = [stargate];
+                    
+                    // Transition to LEVEL_UP state
+                    this.game.stateManager.setState(GAME_STATES.LEVEL_UP);
                 }
-                
-                // Start Get Ready sequence after effect completes
-                setTimeout(() => {
-                    // Increment level before starting Get Ready sequence
-                    this.game.level++;
-                    this.gameTime = 0;
-                    this.game.player.reset();
-                    
-                    // Ensure stargate effect is completely cleared
-                    this.stargateEffect = null;
-                    
-                    // Start Get Ready sequence
-                    this.game.state = GAME_STATES.GET_READY;
-                    this.game.getReadyFlashCount = 0;
-                    this.game.getReadyPhase = 0;
-                    this.game.getReadyTimer = 0;
-                    this.game.getReadyAlpha = 0;
-                }, 3500); // Increased from 2000 to 3500 milliseconds
                 break;
         }
     }
 
-    checkCollision(rect1, rect2) {
-        return rect1.x < rect2.x + rect2.width &&
-               rect1.x + rect1.width > rect2.x &&
-               rect1.y < rect2.y + rect2.height &&
-               rect1.y + rect1.height > rect2.y;
+    checkCollision(rect1, powerUp) {
+        // For stargate, only check if the center of the viper intersects with the vortex (inner 50% of stargate)
+        if (powerUp.type === 'STARGATE') {
+            // Calculate center point of the viper
+            const viperCenterX = rect1.x + rect1.width / 2;
+            const viperCenterY = rect1.y + rect1.height / 2;
+            
+            // Calculate stargate center and vortex radius (50% of stargate size)
+            const stargateCenterX = powerUp.x + powerUp.width / 2;
+            const stargateCenterY = powerUp.y + powerUp.height / 2;
+            const vortexRadius = powerUp.width * 0.25; // Vortex is inner 50% of stargate
+            
+            // Calculate distance between centers
+            const dx = viperCenterX - stargateCenterX;
+            const dy = viperCenterY - stargateCenterY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Return true if viper center is within vortex radius
+            return distance <= vortexRadius;
+        }
+        
+        // For other power-ups, use regular bounding box collision
+        return rect1.x < powerUp.x + powerUp.width &&
+               rect1.x + rect1.width > powerUp.x &&
+               rect1.y < powerUp.y + powerUp.height &&
+               rect1.y + rect1.height > powerUp.y;
     }
 
     getSpawnInterval() {
