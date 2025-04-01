@@ -96,8 +96,8 @@ export default class EnemyManager {
                 return false;
             }
 
-            // Update killer's shooting
-            if (enemy.type === 'KILLER') {
+            // Update shooting for Killer and Striker
+            if (enemy.type === 'KILLER' || enemy.type === 'STRIKER') {
                 enemy.lastShot += deltaTime;
                 if (enemy.lastShot >= ENEMY_CONFIG.KILLER.FIRE_RATE) {
                     this.shoot(enemy);
@@ -138,9 +138,9 @@ export default class EnemyManager {
     }
 
     spawnEnemy() {
-        console.log('Spawning enemy, current enemies:', this.enemies.length);
-        const type = Math.random() < 0.7 ? 'DRONE' : 'KILLER';
-        const config = ENEMY_CONFIG[type];
+        // Randomly choose enemy type (now including STRIKER)
+        const types = ['DRONE', 'KILLER', 'SPIKE', 'STRIKER'];
+        const type = types[Math.floor(Math.random() * types.length)];
         
         // Get sprite dimensions and scale for gameplay
         const spriteName = type.toLowerCase();
@@ -150,12 +150,15 @@ export default class EnemyManager {
         if (sprite) {
             // Scale enemies relative to player size (player is 5% of canvas width)
             const baseScale = this.game.canvas.width * 0.05;
-            const scale = type === 'DRONE' ? baseScale * 1.0 : baseScale * 0.9; // Drones same size as player, Killers slightly smaller
+            // Original scaling for all enemies
+            const scale = type === 'KILLER' ? baseScale * 0.9 :
+                         type === 'STRIKER' ? baseScale * 1.25 : // 25% larger than base
+                         baseScale * 1.0;
             width = scale;
             height = (sprite.height / sprite.width) * scale;
         } else {
-            width = config.WIDTH;
-            height = config.HEIGHT;
+            width = 40;
+            height = 40;
         }
         
         // Determine spawn position and direction based on player's direction
@@ -165,37 +168,44 @@ export default class EnemyManager {
             -width - 50; // Spawn on left if player is moving left
         
         // Direction should be opposite of player's direction
-        const direction = -playerDirection; // Opposite of player's direction
+        const direction = -playerDirection;
         
         // Spawn in the top half of the play area
         const playAreaHeight = this.game.canvas.height / 2;
         const spawnY = Math.random() * (playAreaHeight - height - 50);
         
-        console.log(`Spawning ${type} at x=${spawnX}, y=${spawnY}, direction=${direction}, playerDirection=${playerDirection}`);
-        
+        // Create enemy object with type-specific properties
         const enemy = {
-            type,
+            type: type,
             x: spawnX,
             y: spawnY,
             width: width,
             height: height,
-            speed: type === 'DRONE' ? config.SPEED * 1.2 : config.SPEED,
-            points: config.POINTS,
-            lastShot: 0,
-            shots: [],
-            targetY: this.game.player.y,
+            direction: direction,
             verticalSpeed: 0,
-            maxVerticalSpeed: type === 'DRONE' ? 250 : 150,
-            verticalAcceleration: type === 'DRONE' ? 500 : 300,
-            randomOffset: (Math.random() - 0.5) * 200,
+            verticalAcceleration: (type === 'KILLER' || type === 'STRIKER') ? 400 : 300,
+            maxVerticalSpeed: (type === 'KILLER' || type === 'STRIKER') ? 300 : 200,
+            speed: type === 'KILLER' ? 200 : 
+                   type === 'STRIKER' ? 300 : // 50% faster than Killer's 200
+                   type === 'SPIKE' ? 225 :
+                   150,
+            points: type === 'KILLER' ? 200 :
+                   type === 'STRIKER' ? 300 :
+                   type === 'SPIKE' ? 250 :
+                   100,
+            rotation: type === 'DRONE' || type === 'SPIKE' ? 0 : null,
+            rotationSpeed: type === 'SPIKE' ? 16 : 2,
+            randomOffset: 0,
             randomChangeTimer: 0,
             randomChangeInterval: 1 + Math.random() * 2,
-            rotation: type === 'DRONE' ? 0 : null,
-            direction: direction
+            lastShot: 0,
+            shotType: type === 'STRIKER' ? 'GREEN_PLASMA' : 'NORMAL'
         };
 
+        // Add to enemies array
         this.enemies.push(enemy);
-        console.log('Enemy spawned:', enemy);
+        
+        console.log(`Spawned ${type} at x=${spawnX}, y=${spawnY}, direction=${direction}`);
     }
 
     shoot(enemy) {
@@ -203,9 +213,13 @@ export default class EnemyManager {
             x: enemy.x + (enemy.direction === 1 ? enemy.width : 0),
             y: enemy.y + enemy.height / 2,
             width: 8,
-            height: 6,  // Increased from 2 to 6 to make it more square
-            speed: 300 * enemy.direction,
-            direction: enemy.direction
+            height: 6,
+            speed: enemy.type === 'STRIKER' ? 500 * enemy.direction : 300 * enemy.direction,
+            direction: enemy.direction,
+            type: enemy.shotType || 'NORMAL',
+            trail: [], // Add trail for plasma shots
+            maxTrailLength: 10,
+            time: 0
         };
         this.activeShots.push(shot);
         this.game.audioManager.playEnemyShot();
@@ -295,7 +309,7 @@ export default class EnemyManager {
     render(ctx) {
         // Draw enemies
         this.enemies.forEach(enemy => {
-            const spriteName = enemy.type === 'DRONE' ? 'drone' : 'killer';
+            const spriteName = enemy.type.toLowerCase();
             const sprite = this.game.spriteLoader.getSprite(spriteName);
             
             if (sprite) {
@@ -304,14 +318,15 @@ export default class EnemyManager {
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
                 
-                // Set up rotation for drones
-                if (enemy.type === 'DRONE') {
-                    enemy.rotation = (enemy.rotation - 2) % 360; // Changed to negative for opposite rotation
+                // Set up rotation for drones and spikes
+                if (enemy.type === 'DRONE' || enemy.type === 'SPIKE') {
+                    // Use rotationSpeed property for different spin rates
+                    enemy.rotation = (enemy.rotation - enemy.rotationSpeed) % 360;
                     ctx.translate(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
                     ctx.rotate(enemy.rotation * Math.PI / 180);
                     ctx.drawImage(sprite.image, -enemy.width/2, -enemy.height/2, enemy.width, enemy.height);
                 } else {
-                    // For Killers, flip the sprite based on direction (inverted to face the Viper)
+                    // For Killers and Strikers, flip the sprite based on direction (inverted to face the Viper)
                     ctx.translate(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
                     ctx.scale(-enemy.direction, 1); // Invert direction to face towards Viper
                     ctx.drawImage(sprite.image, -enemy.width/2, -enemy.height/2, enemy.width, enemy.height);
@@ -319,18 +334,70 @@ export default class EnemyManager {
                 ctx.restore();
             } else {
                 // Fallback to rectangles if sprites not loaded
-                ctx.fillStyle = enemy.type === 'DRONE' ? '#ff0000' : '#ff00ff';
+                ctx.fillStyle = enemy.type === 'DRONE' ? '#ff0000' : 
+                              enemy.type === 'SPIKE' ? '#00ff00' :
+                              enemy.type === 'STRIKER' ? '#0000ff' : '#ff00ff';
                 ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
             }
         });
 
         // Draw all active shots
-        ctx.fillStyle = '#ff0';
         this.activeShots.forEach(shot => {
-            // Center the shot on pixel boundaries
-            const x = Math.round(shot.x);
-            const y = Math.round(shot.y - shot.height/2);
-            ctx.fillRect(x, y, shot.width, shot.height);
+            if (shot.type === 'GREEN_PLASMA') {
+                // Update trail
+                shot.trail.push({ x: shot.x, y: shot.y });
+                if (shot.trail.length > shot.maxTrailLength) {
+                    shot.trail.shift();
+                }
+                shot.time += 0.1;
+
+                // Draw trail
+                shot.trail.forEach((pos, index) => {
+                    const alpha = (index / shot.trail.length) * 0.5;
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    
+                    // Draw trail segment
+                    ctx.beginPath();
+                    ctx.moveTo(pos.x, pos.y);
+                    ctx.lineTo(pos.x + shot.width, pos.y);
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                    
+                    // Add glow effect
+                    const gradient = ctx.createLinearGradient(pos.x, pos.y, pos.x + shot.width, pos.y);
+                    gradient.addColorStop(0, 'rgba(0, 255, 0, 0.2)');
+                    gradient.addColorStop(1, 'rgba(0, 255, 0, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(pos.x, pos.y - 2, shot.width, 4);
+                    
+                    ctx.restore();
+                });
+
+                // Draw main plasma bolt
+                ctx.save();
+                
+                // Create plasma bolt gradient
+                const boltGradient = ctx.createLinearGradient(shot.x, shot.y, shot.x + shot.width, shot.y);
+                boltGradient.addColorStop(0, '#00ff00');
+                boltGradient.addColorStop(0.5, '#00cc00');
+                boltGradient.addColorStop(1, '#008800');
+                
+                // Draw main bolt
+                ctx.fillStyle = boltGradient;
+                ctx.fillRect(shot.x, shot.y - shot.height/2, shot.width, shot.height);
+                
+                // Add glow effect
+                ctx.globalCompositeOperation = 'screen';
+                ctx.restore();
+            } else {
+                // Regular yellow enemy shots
+                ctx.fillStyle = '#ff0';
+                const x = Math.round(shot.x);
+                const y = Math.round(shot.y - shot.height/2);
+                ctx.fillRect(x, y, shot.width, shot.height);
+            }
         });
 
         // Draw explosions

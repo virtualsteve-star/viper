@@ -65,6 +65,11 @@ export default class GameStateManager {
                 break;
             case GAME_STATES.GET_READY:
                 this.resetGetReadyState();
+                // Reset player position first
+                this.game.player.reset();
+                // Clear any existing enemies or power-ups
+                this.game.enemyManager.clearEnemies();
+                this.game.powerUpManager.clearPowerUps();
                 // Only play background music if coming from START state
                 if (this.previousState === GAME_STATES.START) {
                     this.game.audioManager.playBackgroundMusic('PLAYING');
@@ -80,11 +85,6 @@ export default class GameStateManager {
                 if (this.previousState === GAME_STATES.START) {
                     this.game.audioManager.playBackgroundMusic('PLAYING');
                 }
-                // Reset player position
-                this.game.player.reset();
-                // Clear any existing enemies or power-ups
-                this.game.enemyManager.clearEnemies();
-                this.game.powerUpManager.clearPowerUps();
                 // Reset all state flags
                 this.game.isLevelUp = false;
                 this.game.levelUpPhase = 0;

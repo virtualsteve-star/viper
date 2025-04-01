@@ -26,6 +26,8 @@ export default class SpriteLoader {
                 this.loadSprite('viper', 'public/sprites/Viper.png'),
                 this.loadSprite('drone', 'public/sprites/Drone.png'),
                 this.loadSprite('killer', 'public/sprites/Killer.png'),
+                this.loadSprite('spike', 'public/sprites/Spike.png'),
+                this.loadSprite('striker', 'public/sprites/Striker.png'),
                 this.loadSprite('shield', 'public/sprites/ShieldPowerup.png'),
                 this.loadSprite('life', 'public/sprites/ExtraLife.png'),
                 this.loadSprite('stargate', 'public/sprites/Stargate.png'),
