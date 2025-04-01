@@ -6,6 +6,7 @@ import AudioManager from './managers/AudioManager';
 import SpriteLoader from './utils/SpriteLoader';
 import Starfield from './entities/Starfield';
 import { GAME_STATES, PLAYER_CONFIG, POWER_UP_CONFIG } from './constants';
+import InputHandler from './utils/InputHandler';
 
 export default class Game {
     constructor(canvas, ctx) {
@@ -19,8 +20,9 @@ export default class Game {
         this.state = GAME_STATES.START;
         this.score = 0;
         this.level = 1;
-        this.lives = 3;
+        this.lives = PLAYER_CONFIG.LIVES;
         this.shieldTime = 0;
+        this.shots = [];  // Initialize shots array
         
         // Death sequence
         this.deathTimer = 0;
@@ -65,6 +67,7 @@ export default class Game {
             this.enemyManager = new EnemyManager(this);
             this.powerUpManager = new PowerUpManager(this);
             this.audioManager = new AudioManager();
+            this.inputHandler = new InputHandler();
             
             // Setup input handlers
             this.keys = {};
@@ -89,36 +92,13 @@ export default class Game {
     }
 
     setupInputHandlers() {
-        window.addEventListener('keydown', (e) => {
-            this.keys[e.key.toLowerCase()] = true;
-            if (e.key === ' ' && this.state === GAME_STATES.START) {
-                // Start the Get Ready sequence and switch to gameplay music
-                this.state = GAME_STATES.GET_READY;
-                this.getReadyFlashCount = 0;
-                this.getReadyPhase = 0;
-                this.getReadyTimer = 0;
-                this.getReadyAlpha = 0;
-                this.audioManager.playBackgroundMusic(GAME_STATES.PLAYING);
-            } else if (e.key.toLowerCase() === 'r') {
-                if (this.state === GAME_STATES.GAME_OVER) {
-                    this.restart();
-                } else if (this.state === GAME_STATES.PLAYING) {
-                    // Toggle direction
-                    this.player.toggleDirection();
-                    // Clear power-ups
-                    this.powerUpManager.clearPowerUps();
-                }
-            }
-        });
-
-        window.addEventListener('keyup', (e) => {
-            this.keys[e.key.toLowerCase()] = false;
-        });
+        // Remove the old event listeners since InputHandler now handles them
+        this.inputHandler = new InputHandler();
     }
 
     restart() {
         this.score = 0;
-        this.lives = 3;
+        this.lives = PLAYER_CONFIG.LIVES;
         this.level = 1;
         this.shieldTime = 0;
         this.deathTimer = 0;
@@ -181,6 +161,16 @@ export default class Game {
             // Update title pulse and stargate rotation
             this.titlePulse = (this.titlePulse + deltaTime) % (Math.PI * 2);
             this.stargateRotation = (this.stargateRotation + deltaTime * 15) % 360;
+
+            // Check for space key to start game
+            if (this.inputHandler.isKeyPressed(' ')) {
+                this.state = GAME_STATES.GET_READY;
+                this.getReadyFlashCount = 0;
+                this.getReadyPhase = 0;
+                this.getReadyTimer = 0;
+                this.getReadyAlpha = 0;
+                this.audioManager.playBackgroundMusic(GAME_STATES.PLAYING);
+            }
             return;
         }
         
@@ -194,6 +184,11 @@ export default class Game {
                 this.restartAlpha = 1;
                 this.restartFadeDirection = -1;
             }
+
+            // Check for R key to restart
+            if (this.inputHandler.isKeyPressed('r')) {
+                this.restart();
+            }
             return;
         }
 
@@ -201,6 +196,9 @@ export default class Game {
         if (this.state === GAME_STATES.GET_READY) {
             // Update starfield during Get Ready
             this.starfield.update(deltaTime);
+            
+            // Update terrain during Get Ready to ensure smooth transition
+            this.terrain.update(deltaTime);
             
             this.getReadyTimer += deltaTime;
             
@@ -256,25 +254,25 @@ export default class Game {
 
             // Handle level-up sequence
             if (this.state === GAME_STATES.PLAYING && this.isLevelUp) {
-                // Reset player position and clear enemies/power-ups
-                this.player.reset();
-                this.enemyManager.clearEnemies();
-                this.powerUpManager.clearPowerUps();
-                
-                // Hide the stargate before starting Get Ready sequence
-                this.powerUpManager.stargateEffect = null;
-                
-                // Start the Get Ready sequence for the new level
-                this.state = GAME_STATES.GET_READY;
-                this.getReadyFlashCount = 0;
-                this.getReadyPhase = 0;
-                this.getReadyTimer = 0;
-                this.getReadyAlpha = 0;
-                return;
+                // Only transition to GET_READY if there's no active stargate effect
+                if (!this.powerUpManager.stargateEffect) {
+                    // Reset player position and clear enemies/power-ups
+                    this.player.reset();
+                    this.enemyManager.clearEnemies();
+                    this.powerUpManager.clearPowerUps();
+                    
+                    // Start the Get Ready sequence for the new level
+                    this.state = GAME_STATES.GET_READY;
+                    this.getReadyFlashCount = 0;
+                    this.getReadyPhase = 0;
+                    this.getReadyTimer = 0;
+                    this.getReadyAlpha = 0;
+                    return;
+                }
             }
 
-            // Update player
-            this.player.update(deltaTime, this.keys);
+            // Update player with input handler
+            this.player.update(deltaTime, this.inputHandler);
 
             // Only update terrain and managers if player is alive
             if (!this.player.isDead) {
@@ -294,12 +292,12 @@ export default class Game {
                 this.shieldTime -= deltaTime;
             }
 
-            // Update death sequence only if not on last life
-            if (this.player.isDead && this.lives > 0) {
+            // Update death sequence
+            if (this.player.isDead) {
                 this.deathTimer += deltaTime;
                 if (this.deathTimer >= this.deathDelay) {
-                    // Reset player position immediately after explosion
-                    if (!this.player.isRespawned) {
+                    // Only reset player if we still have lives
+                    if (this.lives > 0 && !this.player.isRespawned) {
                         this.player.reset();
                         this.player.isRespawned = true;
                         this.enemyManager.clearEnemies();
@@ -308,14 +306,17 @@ export default class Game {
 
                     this.readyTimer += deltaTime;
                     if (this.readyTimer >= this.readyDelay) {
-                        // Reset death sequence timers and flags
-                        this.deathTimer = 0;
-                        this.readyTimer = 0;
-                        this.player.isRespawned = false;
-                        this.player.isDead = false;
-                        
-                        // Resume gameplay
-                        this.state = GAME_STATES.PLAYING;
+                        // Only reset death sequence if we still have lives
+                        if (this.lives > 0) {
+                            // Reset death sequence timers and flags
+                            this.deathTimer = 0;
+                            this.readyTimer = 0;
+                            this.player.isRespawned = false;
+                            this.player.isDead = false;
+                            
+                            // Resume gameplay
+                            this.state = GAME_STATES.PLAYING;
+                        }
                     }
                 }
             }
@@ -353,7 +354,7 @@ export default class Game {
         this.enemyManager.clearEnemies();
         this.powerUpManager.clearPowerUps();
         
-        // Handle final death differently
+        // Handle final death
         if (this.lives <= 0) {
             this.player.die(); // This will trigger the big explosion
             // Wait for the big explosion animation to complete before showing game over
@@ -362,25 +363,25 @@ export default class Game {
                 this.audioManager.playBackgroundMusic('GAME_OVER');
             }, 3000);
         } else {
-            // Regular death
+            // Regular death with lives remaining
             this.player.die();
         }
     }
 
     render() {
-        // Clear canvas
+        // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Render based on game state
+        // Always render starfield first
+        this.starfield.render(this.ctx);
+
+        // Render game elements based on state
         switch (this.state) {
             case GAME_STATES.START:
-                // Draw starfield first
-                this.starfield.render(this.ctx);
                 this.renderStartScreen();
                 break;
             case GAME_STATES.GET_READY:
-                // Draw all game elements first
-                this.starfield.render(this.ctx);
+                // Draw game elements
                 this.terrain.render(this.ctx);
                 this.player.render(this.ctx);
                 this.renderDashboard();
@@ -391,7 +392,7 @@ export default class Game {
                     this.ctx.save();
                     this.ctx.imageSmoothingEnabled = true;
                     this.ctx.imageSmoothingQuality = 'high';
-                    
+
                     // Scale banner to be about 30% of canvas width
                     const bannerScale = this.canvas.width * 0.3 / getReady.width;
                     const bannerWidth = getReady.width * bannerScale;
@@ -411,7 +412,29 @@ export default class Game {
                 }
                 break;
             case GAME_STATES.PLAYING:
-                this.renderGame();
+                // Render terrain
+                this.terrain.render(this.ctx);
+
+                // Render player
+                this.player.render(this.ctx);
+
+                // Render enemies
+                if (this.enemyManager) {
+                    this.enemyManager.render(this.ctx);
+                }
+
+                // Render power-ups
+                if (this.powerUpManager) {
+                    this.powerUpManager.render(this.ctx);
+                }
+
+                // Render shots last so they appear on top
+                if (this.shots) {
+                    this.shots.forEach(shot => shot.render(this.ctx));
+                }
+
+                // Render dashboard with sci-fi style
+                this.renderDashboard();
                 break;
             case GAME_STATES.GAME_OVER:
                 this.renderGameOver();
@@ -537,77 +560,51 @@ export default class Game {
         this.ctx.fillText('PRESS SPACE TO START', centerX, centerY + 250);
     }
 
-    renderGame() {
-        // Draw starfield first
-        this.starfield.render(this.ctx);
-        
-        // Draw terrain
-        this.terrain.render(this.ctx);
-        
-        // Draw power-ups
-        this.powerUpManager.render(this.ctx);
-        
-        // Draw enemies
-        this.enemyManager.render(this.ctx);
-        
-        // Draw player
-        this.player.render(this.ctx);
-        
-        // Draw dashboard
-        this.renderDashboard();
-
-        // Render level-up banner if active
-        if (this.isLevelUp) {
-            const levelUp = this.spriteLoader.getSprite('levelUp');
-            if (levelUp) {
-                this.ctx.save();
-                this.ctx.imageSmoothingEnabled = true;
-                this.ctx.imageSmoothingQuality = 'high';
-                
-                // Scale banner to be about 30% of canvas width
-                const bannerScale = this.canvas.width * 0.3 / levelUp.width;
-                const bannerWidth = levelUp.width * bannerScale;
-                const bannerHeight = levelUp.height * bannerScale;
-                
-                // Center the banner
-                this.ctx.drawImage(
-                    levelUp.image,
-                    this.canvas.width/2 - bannerWidth/2,
-                    this.canvas.height/2 - bannerHeight/2,
-                    bannerWidth,
-                    bannerHeight
-                );
-                
-                this.ctx.restore();
-            }
-        }
-    }
-
     renderDashboard() {
         const padding = 20;
         const topMargin = 20;
         
-        // Draw score
+        // Draw score with sci-fi style
         this.ctx.save();
-        this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '24px Arial';
+        this.ctx.font = 'bold 36px "Orbitron", "Arial", sans-serif';
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(`Score: ${this.score}`, padding, topMargin + 10);
+        this.ctx.textBaseline = 'top';
         
-        // Draw lives as tiny Vipers
+        // Create gradient for score text
+        const scoreGradient = this.ctx.createLinearGradient(padding, topMargin, padding, topMargin + 40);
+        scoreGradient.addColorStop(0, '#00ffff');
+        scoreGradient.addColorStop(0.5, '#0088ff');
+        scoreGradient.addColorStop(1, '#0044ff');
+        
+        // Draw score with glow effect
+        this.ctx.shadowColor = 'rgba(0, 255, 255, 0.5)';
+        this.ctx.shadowBlur = 10;
+        this.ctx.fillStyle = scoreGradient;
+        this.ctx.fillText(`Score: ${this.score}`, padding, topMargin);
+        this.ctx.restore();
+        
+        // Draw lives as tiny Vipers in top right
         const sprite = this.spriteLoader.getSprite('viper');
-        if (sprite) {
-            const viperWidth = 30; // Small fixed size for UI
+        if (sprite && this.lives > 0) {
+            const viperWidth = 38; // Increased from 30 to 38 (about 25% larger)
             const viperHeight = (sprite.height / sprite.width) * viperWidth;
-            const spacing = viperWidth + 10;
+            const spacing = viperWidth + 8; // Increased spacing to account for larger icons
             
             for (let i = 0; i < this.lives; i++) {
                 this.ctx.save();
                 // Enable high-quality image rendering
                 this.ctx.imageSmoothingEnabled = true;
                 this.ctx.imageSmoothingQuality = 'high';
+                
+                // Position from right edge
+                const x = this.canvas.width - padding - ((i + 1) * spacing);
+                
+                // Add glow effect to viper icons
+                this.ctx.shadowColor = 'rgba(0, 255, 255, 0.5)';
+                this.ctx.shadowBlur = 5;
+                
                 this.ctx.drawImage(sprite.image, 
-                    this.canvas.width - padding - (this.lives - i) * spacing, 
+                    x, 
                     topMargin, 
                     viperWidth, 
                     viperHeight
@@ -616,8 +613,9 @@ export default class Game {
             }
         }
         
-        // Draw shield meter
+        // Draw shield meter if active
         if (this.shieldTime > 0) {
+            this.ctx.save();
             const meterWidth = 150;
             const meterHeight = 20;
             const x = this.canvas.width / 2 - meterWidth / 2;
@@ -628,7 +626,7 @@ export default class Game {
             this.ctx.fillStyle = '#000000';
             this.ctx.fillRect(x, y, meterWidth, meterHeight);
             
-            // Draw meter fill
+            // Draw meter fill with gradient
             const gradient = this.ctx.createLinearGradient(x, y, x + meterWidth * fillPercent, y);
             gradient.addColorStop(0, '#00ffff'); // Bright blue
             gradient.addColorStop(1, '#0066ff'); // Darker blue
@@ -640,21 +638,17 @@ export default class Game {
             this.ctx.lineWidth = 2;
             this.ctx.strokeRect(x, y, meterWidth, meterHeight);
             
-            // Draw "SHIELD" text - centered both horizontally and vertically
+            // Draw "SHIELD" text
+            this.ctx.font = 'bold 14px "Orbitron", "Arial", sans-serif';
             this.ctx.fillStyle = '#ffffff';
-            this.ctx.font = '14px Arial';
             this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle'; // This ensures vertical centering
+            this.ctx.textBaseline = 'middle';
             this.ctx.fillText('SHIELD', x + meterWidth / 2, y + meterHeight / 2);
+            this.ctx.restore();
         }
-        
-        this.ctx.restore();
     }
 
     renderGameOver() {
-        // Draw starfield first
-        this.starfield.render(this.ctx);
-        
         // Draw terrain
         this.terrain.render(this.ctx);
         
@@ -670,13 +664,18 @@ export default class Game {
             const bannerWidth = gameOver.width * bannerScale;
             const bannerHeight = gameOver.height * bannerScale;
             
+            // Add pulse effect
+            const pulseScale = 1 + Math.sin(Date.now() * 0.005) * 0.1; // Slower pulse than level up
+            const finalWidth = bannerWidth * pulseScale;
+            const finalHeight = bannerHeight * pulseScale;
+            
             // Center the banner
             this.ctx.drawImage(
                 gameOver.image,
-                this.canvas.width/2 - bannerWidth/2,
-                this.canvas.height/2 - bannerHeight/2,
-                bannerWidth,
-                bannerHeight
+                this.canvas.width/2 - finalWidth/2,
+                this.canvas.height/2 - finalHeight/2,
+                finalWidth,
+                finalHeight
             );
             
             this.ctx.restore();

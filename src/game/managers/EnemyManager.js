@@ -245,21 +245,30 @@ export default class EnemyManager {
         });
 
         // Check player shot collisions with enemies
-        player.shots = player.shots.filter(shot => {
-            let shotHit = false;
-            this.enemies = this.enemies.filter(enemy => {
-                if (this.checkCollision(shot, enemy)) {
-                    shotHit = true;
-                    this.createExplosion(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
-                    this.game.score += enemy.points;
-                    return false;
-                }
-                return true;
+        if (this.game.shots) {
+            this.game.shots = this.game.shots.filter(shot => {
+                let shotHit = false;
+                this.enemies = this.enemies.filter(enemy => {
+                    if (this.checkCollision(shot, enemy)) {
+                        shotHit = true;
+                        this.createExplosion(enemy.x + enemy.width/2, enemy.y + enemy.height/2);
+                        this.game.score += enemy.points;
+                        return false;
+                    }
+                    return true;
+                });
+                return !shotHit;
             });
-            return !shotHit;
-        });
+        }
 
         return playerHit;
+    }
+
+    checkCollision(rect1, rect2) {
+        return rect1.x < rect2.x + rect2.width &&
+               rect1.x + rect1.width > rect2.x &&
+               rect1.y < rect2.y + rect2.height &&
+               rect1.y + rect1.height > rect2.y;
     }
 
     createExplosion(x, y) {
@@ -273,13 +282,6 @@ export default class EnemyManager {
             time: 0
         });
         this.game.audioManager.playExplosion();
-    }
-
-    checkCollision(rect1, rect2) {
-        return rect1.x < rect2.x + rect2.width &&
-               rect1.x + rect1.width > rect2.x &&
-               rect1.y < rect2.y + rect2.height &&
-               rect1.y + rect1.height > rect2.y;
     }
 
     getSpawnInterval() {

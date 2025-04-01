@@ -33,7 +33,8 @@ export default class SpriteLoader {
                 this.loadSprite('viperTitle', 'public/banners/ViperTitle.png'),
                 this.loadSprite('getReady', 'public/banners/GetReady.png'),
                 this.loadSprite('levelUp', 'public/banners/LevelUp.png'),
-                this.loadSprite('gameOver', 'public/banners/GameOver.png')
+                this.loadSprite('gameOver', 'public/banners/GameOver.png'),
+                this.loadSprite('lavaTexture', 'public/textures/LavaTexture.png')
             ]);
             this.loaded = true;
         } catch (error) {

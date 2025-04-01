@@ -1,4 +1,5 @@
-import { PLAYER_CONFIG } from '../constants';
+import { PLAYER_CONFIG, GAME_STATES } from '../constants';
+import Shot from './Shot';
 
 export default class Player {
     constructor(game, x, y) {
@@ -33,6 +34,9 @@ export default class Player {
         this.thrustLength = 0;
         this.thrustOpacity = 0;
         this.thrustFadeSpeed = 2; // How quickly thrust fades in/out
+
+        // Key state tracking
+        this.wasReversePressed = false;
     }
 
     startFadeOut() {
@@ -40,52 +44,87 @@ export default class Player {
         this.fadeOpacity = 1;
     }
 
-    update(deltaTime, keys) {
+    update(deltaTime, inputHandler) {
+        // Handle death state updates regardless of game state
         if (this.isDead) {
             if (this.explosion) {
+                // Update explosion animation
                 this.explosion.time += deltaTime;
                 this.explosion.radius += this.explosion.growthRate * deltaTime;
-                this.explosion.opacity = this.explosion.isFinal ? 
-                    Math.max(0, 1 - this.explosion.time / 3) : // Slower fade for final explosion
-                    Math.max(0, 1 - this.explosion.time);
-
-                // Update secondary explosions for final death
+                this.explosion.opacity -= deltaTime * 0.5; // Slower fade out
+                
+                // Update secondary explosions if they exist
                 if (this.explosion.secondaryExplosions) {
                     this.explosion.secondaryExplosions.forEach(exp => {
                         exp.time += deltaTime;
-                        if (exp.time > 0) { // Only start after delay
+                        if (exp.time > 0) { // Only update after delay
                             exp.radius += exp.growthRate * deltaTime;
-                            exp.opacity = Math.max(0, 1 - (exp.time / 2));
+                            exp.opacity -= deltaTime * 0.5;
                         }
                     });
-
-                    // Remove completed secondary explosions
-                    this.explosion.secondaryExplosions = this.explosion.secondaryExplosions.filter(
-                        exp => exp.opacity > 0
-                    );
-
-                    // Clear main explosion when all secondary explosions are done
-                    if (this.explosion.secondaryExplosions.length === 0 && this.explosion.opacity <= 0) {
-                        this.explosion = null;
-                    }
-                } else if (this.explosion.opacity <= 0) {
-                    this.explosion = null;
                 }
             }
             return;
         }
 
-        // Update fade effect
+        // Update existing shots regardless of game state
+        if (this.game.shots) {
+            this.game.shots = this.game.shots.filter(shot => {
+                shot.update(deltaTime);
+                return !shot.isOffscreen(this.game.canvas.width);
+            });
+        }
+
+        // Only process movement and new shots in PLAYING state
+        if (this.game.state !== GAME_STATES.PLAYING) return;
+
+        // Handle movement
+        if (inputHandler.isKeyPressed('arrowup') || inputHandler.isKeyPressed('w')) {
+            this.y = Math.max(0, this.y - PLAYER_CONFIG.SPEED * deltaTime);
+        }
+        if (inputHandler.isKeyPressed('arrowdown') || inputHandler.isKeyPressed('s')) {
+            this.y = Math.min(this.game.canvas.height - PLAYER_CONFIG.HEIGHT, this.y + PLAYER_CONFIG.SPEED * deltaTime);
+        }
+        if (inputHandler.isKeyPressed('arrowright') || inputHandler.isKeyPressed('d')) {
+            this.x = Math.min(this.game.canvas.width - this.width, this.x + PLAYER_CONFIG.SPEED * deltaTime);
+        }
+        if (inputHandler.isKeyPressed('arrowleft') || inputHandler.isKeyPressed('a')) {
+            this.x = Math.max(0, this.x - PLAYER_CONFIG.SPEED * deltaTime);
+        }
+
+        // Handle reverse key with state tracking
+        const isReversePressed = inputHandler.isKeyPressed('r');
+        if (isReversePressed && !this.wasReversePressed) {
+            this.reverse();
+        }
+        this.wasReversePressed = isReversePressed;
+
+        // Handle shooting
+        if (inputHandler.isKeyPressed(' ') || inputHandler.isKeyPressed('x')) {
+            this.shoot();
+        }
+
+        // Keep player within bounds
+        this.x = Math.max(0, Math.min(this.x, this.game.canvas.width - this.width));
+        this.y = Math.max(0, Math.min(this.y, this.game.canvas.height - this.height));
+
+        // Check for collisions with terrain
+        if (this.game.terrain.checkCollision(this)) {
+            this.game.handlePlayerDeath(); // Let the Game class handle the death sequence
+            return;
+        }
+
+        // Update fade effect regardless of game state
         if (this.isFading) {
-            this.fadeOpacity = Math.max(0, this.fadeOpacity - deltaTime / 2);
+            this.fadeOpacity = Math.max(0, this.fadeOpacity - deltaTime);
             return;
         }
 
         // Update thrust effect based on movement
-        const isMovingForward = (this.direction === 1 && (keys['d'] || keys['arrowright'])) ||
-                               (this.direction === -1 && (keys['a'] || keys['arrowleft']));
-        const isMovingBackward = (this.direction === 1 && (keys['a'] || keys['arrowleft'])) ||
-                                (this.direction === -1 && (keys['d'] || keys['arrowright']));
+        const isMovingForward = (this.direction === 1 && (inputHandler.isKeyPressed('d') || inputHandler.isKeyPressed('arrowright'))) ||
+                               (this.direction === -1 && (inputHandler.isKeyPressed('a') || inputHandler.isKeyPressed('arrowleft')));
+        const isMovingBackward = (this.direction === 1 && (inputHandler.isKeyPressed('a') || inputHandler.isKeyPressed('arrowleft'))) ||
+                                (this.direction === -1 && (inputHandler.isKeyPressed('d') || inputHandler.isKeyPressed('arrowright')));
 
         // Update thrust length
         if (isMovingForward) {
@@ -98,59 +137,20 @@ export default class Player {
 
         // Update thrust opacity
         this.thrustOpacity = this.thrustLength;
-
-        // Movement
-        if (keys['w'] || keys['arrowup']) {
-            this.y -= this.speed * deltaTime;
-        }
-        if (keys['s'] || keys['arrowdown']) {
-            this.y += this.speed * deltaTime;
-        }
-        if (keys['d'] || keys['arrowright']) {
-            this.x += this.speed * deltaTime;
-        }
-        if (keys['a'] || keys['arrowleft']) {
-            this.x -= this.speed * deltaTime;
-        }
-
-        // Keep player in bounds
-        this.y = Math.max(0, Math.min(this.y, 720 - this.height));
-
-        // Shooting
-        if ((keys[' '] || keys['shift']) && this.canShoot(deltaTime)) {
-            this.shoot();
-        }
-
-        // Update shots
-        this.shots = this.shots.filter(shot => {
-            shot.x += shot.speed * deltaTime;
-            return shot.x < 1280;
-        });
-    }
-
-    canShoot(deltaTime) {
-        const now = Date.now();
-        if (now - this.lastShot >= PLAYER_CONFIG.FIRE_RATE * 1000) {
-            this.lastShot = now;
-            return true;
-        }
-        return false;
     }
 
     shoot() {
-        if (this.isDead) return;
-        
-        this.shots.push({
-            x: this.x + (this.direction === 1 ? this.width : 0),
-            y: this.y + this.height / 2,
-            width: 12,
-            height: 6,
-            speed: 500 * this.direction, // Reverse speed based on direction
-            trail: [],
-            maxTrailLength: 20,
-            time: 0
-        });
-        this.game.audioManager.playViperShot();
+        const now = Date.now();
+        if (now - this.lastShot >= PLAYER_CONFIG.FIRE_RATE * 1000) {
+            const shot = new Shot(
+                this.x + (this.direction === 1 ? this.width : 0),
+                this.y + this.height / 2,
+                this.direction  // Use the current direction when creating the shot
+            );
+            this.game.shots.push(shot);
+            this.lastShot = now;
+            this.game.audioManager.playViperShot();
+        }
     }
 
     updateShots(deltaTime) {
@@ -431,5 +431,11 @@ export default class Player {
 
     toggleDirection() {
         this.direction *= -1;
+    }
+
+    reverse() {
+        this.direction *= -1;
+        // Don't affect existing shots - they should maintain their original direction
+        // Only new shots will use the new direction
     }
 } 

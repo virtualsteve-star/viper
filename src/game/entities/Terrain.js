@@ -1,4 +1,4 @@
-import { TERRAIN_CONFIG } from '../constants';
+import { TERRAIN_CONFIG, GAME_STATES } from '../constants';
 
 export default class Terrain {
     constructor(game) {
@@ -12,13 +12,13 @@ export default class Terrain {
 
     generateTerrain() {
         // Generate initial terrain segments
-        const numSegments = Math.ceil(this.width / TERRAIN_CONFIG.SEGMENT_WIDTH) + 4; // Added extra segments for buffer
+        const numSegments = Math.ceil(this.width / TERRAIN_CONFIG.SEGMENT_WIDTH) + 4;
         
         // Ensure first few segments are flat for safe starting area
         for (let i = 0; i < 3; i++) {
             this.segments.push({
                 x: i * TERRAIN_CONFIG.SEGMENT_WIDTH,
-                height: TERRAIN_CONFIG.MIN_HEIGHT // Use minimum height for starting area
+                height: TERRAIN_CONFIG.MIN_HEIGHT
             });
         }
         
@@ -26,124 +26,103 @@ export default class Terrain {
         for (let i = 3; i < numSegments; i++) {
             this.segments.push({
                 x: i * TERRAIN_CONFIG.SEGMENT_WIDTH,
-                height: this.generateHeight()
+                height: this.generateHeight(i * TERRAIN_CONFIG.SEGMENT_WIDTH)
             });
         }
     }
 
-    generateHeight() {
-        return Math.random() * (TERRAIN_CONFIG.MAX_HEIGHT - TERRAIN_CONFIG.MIN_HEIGHT) + TERRAIN_CONFIG.MIN_HEIGHT;
+    generateHeight(x) {
+        // Use the x position to generate a consistent height
+        // This ensures the same x position always generates the same height
+        const seed = Math.sin(x * 0.3) * 10000;
+        return Math.abs(Math.sin(seed)) * (TERRAIN_CONFIG.MAX_HEIGHT - TERRAIN_CONFIG.MIN_HEIGHT) + TERRAIN_CONFIG.MIN_HEIGHT;
     }
 
     update(deltaTime) {
-        // Scroll terrain based on player direction
-        this.scrollOffset -= TERRAIN_CONFIG.SCROLL_SPEED * deltaTime * this.game.player.direction;
+        // Only scroll terrain if we're in PLAYING state
+        if (this.game.state === GAME_STATES.PLAYING) {
+            this.scrollOffset -= TERRAIN_CONFIG.SCROLL_SPEED * deltaTime * this.game.player.direction;
+        }
 
-        // Remove off-screen segments and add new ones
-        const firstSegment = this.segments[0];
-        if (firstSegment && firstSegment.x + this.scrollOffset < -TERRAIN_CONFIG.SEGMENT_WIDTH) {
+        // Remove off-screen segments that are definitely not coming back into view soon
+        while (this.segments.length > 0 && 
+               this.segments[0].x + this.scrollOffset < -TERRAIN_CONFIG.SEGMENT_WIDTH * 2) {
             this.segments.shift();
         }
 
-        // Add new segments at both edges if needed
-        const lastSegment = this.segments[this.segments.length - 1];
-        
-        // Add segments on the right if needed
-        if (lastSegment && lastSegment.x + this.scrollOffset < this.width) {
+        // Add segments on the right if needed (add more buffer)
+        while (this.segments.length > 0 && 
+               this.segments[this.segments.length - 1].x + this.scrollOffset < this.width + TERRAIN_CONFIG.SEGMENT_WIDTH * 2) {
+            const newX = this.segments[this.segments.length - 1].x + TERRAIN_CONFIG.SEGMENT_WIDTH;
             this.segments.push({
-                x: lastSegment.x + TERRAIN_CONFIG.SEGMENT_WIDTH,
-                height: this.generateHeight()
+                x: newX,
+                height: this.generateHeight(newX)  // Pass x position for consistent height
             });
         }
 
         // Add segments on the left if needed
-        if (firstSegment && firstSegment.x + this.scrollOffset > -TERRAIN_CONFIG.SEGMENT_WIDTH) {
+        while (this.segments.length > 0 && 
+               this.segments[0].x + this.scrollOffset > -TERRAIN_CONFIG.SEGMENT_WIDTH * 2) {
+            const newX = this.segments[0].x - TERRAIN_CONFIG.SEGMENT_WIDTH;
             this.segments.unshift({
-                x: firstSegment.x - TERRAIN_CONFIG.SEGMENT_WIDTH,
-                height: this.generateHeight()
+                x: newX,
+                height: this.generateHeight(newX)  // Pass x position for consistent height
             });
-        }
-
-        // Keep the number of segments reasonable
-        while (this.segments.length > 20) {
-            // Remove from the end if we have too many segments
-            this.segments.pop();
         }
     }
 
     render(ctx) {
-        // Draw terrain segments
+        const lavaTexture = this.game.spriteLoader.getSprite('lavaTexture');
+        if (!lavaTexture) return;
+
+        // Create a canvas for the white mountain mask
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = this.width;
+        maskCanvas.height = this.height;
+        const maskCtx = maskCanvas.getContext('2d');
+
+        // Draw the mountain shape in pure white
+        maskCtx.fillStyle = 'white';
+        maskCtx.beginPath();
+        maskCtx.moveTo(0, this.height);
+        
         this.segments.forEach((segment, index) => {
             const x = segment.x + this.scrollOffset;
-            
-            // Skip segments that are completely off screen
-            if (x + TERRAIN_CONFIG.SEGMENT_WIDTH < 0 || x > this.width) {
-                return;
-            }
-            
-            // Get next segment for smooth connection
-            const nextSegment = this.segments[index + 1];
-            const nextX = nextSegment ? nextSegment.x + this.scrollOffset : x + TERRAIN_CONFIG.SEGMENT_WIDTH;
-            const nextHeight = nextSegment ? nextSegment.height : segment.height;
-
-            // Create terrain gradient for base color
-            const terrainGradient = ctx.createLinearGradient(x, 0, x, this.height);
-            terrainGradient.addColorStop(0, '#2a2a2a'); // Darker top
-            terrainGradient.addColorStop(1, '#1a1a1a'); // Even darker bottom
-            
-            // Draw base terrain shape
-            ctx.beginPath();
-            ctx.moveTo(x, this.height);
-            ctx.lineTo(x, this.height - segment.height);
-            ctx.lineTo(nextX, this.height - nextHeight);
-            ctx.lineTo(nextX, this.height);
-            ctx.closePath();
-            
-            // Fill with base gradient
-            ctx.fillStyle = terrainGradient;
-            ctx.fill();
-            
-            // Add rocky texture effect
-            ctx.save();
-            ctx.globalAlpha = 0.15;
-            ctx.clip(); // Only apply texture within terrain shape
-            
-            // Create noise pattern for texture
-            for (let y = this.height - Math.max(segment.height, nextHeight); y < this.height; y += 4) {
-                for (let xOffset = 0; xOffset < TERRAIN_CONFIG.SEGMENT_WIDTH; xOffset += 4) {
-                    if (Math.random() > 0.5) { // Random dots for texture
-                        ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.3})`;
-                        ctx.fillRect(x + xOffset, y, 3, 3);
-                    }
-                }
-            }
-            ctx.restore();
-            
-            // Add highlight on edges
-            ctx.beginPath();
-            ctx.moveTo(x, this.height - segment.height);
-            ctx.lineTo(nextX, this.height - nextHeight);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            
-            // Add shadow effect
-            const shadowGradient = ctx.createLinearGradient(
-                x, this.height - segment.height,
-                x, this.height
-            );
-            shadowGradient.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
-            shadowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            
-            ctx.fillStyle = shadowGradient;
-            ctx.beginPath();
-            ctx.moveTo(x, this.height - segment.height);
-            ctx.lineTo(nextX, this.height - nextHeight);
-            ctx.lineTo(nextX, this.height - nextHeight + 20);
-            ctx.lineTo(x, this.height - segment.height + 20);
-            ctx.closePath();
-            ctx.fill();
+            maskCtx.lineTo(x, this.height - segment.height);
         });
+
+        const lastSegment = this.segments[this.segments.length - 1];
+        if (lastSegment) {
+            const lastX = lastSegment.x + this.scrollOffset;
+            maskCtx.lineTo(lastX + TERRAIN_CONFIG.SEGMENT_WIDTH, this.height - lastSegment.height);
+        }
+        
+        maskCtx.lineTo(this.width, this.height);
+        maskCtx.closePath();
+        maskCtx.fill();
+
+        // Create a canvas for the texture
+        const textureCanvas = document.createElement('canvas');
+        textureCanvas.width = this.width;
+        textureCanvas.height = this.height;
+        const textureCtx = textureCanvas.getContext('2d');
+
+        // Draw the lava texture
+        const scale = 0.2;
+        const pattern = textureCtx.createPattern(lavaTexture.image, 'repeat');
+        const matrix = new DOMMatrix();
+        matrix.scaleSelf(scale, scale);
+        matrix.translateSelf(this.scrollOffset / scale, 0);
+        pattern.setTransform(matrix);
+        textureCtx.fillStyle = pattern;
+        textureCtx.fillRect(0, 0, this.width, this.height);
+
+        // AND the texture with the mask
+        textureCtx.globalCompositeOperation = 'destination-in';
+        textureCtx.drawImage(maskCanvas, 0, 0);
+
+        // Draw the result to the screen (without clearing first)
+        ctx.drawImage(textureCanvas, 0, 0);
     }
 
     checkCollision(player) {

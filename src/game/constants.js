@@ -11,7 +11,8 @@ export const PLAYER_CONFIG = {
     SPEED: 300,
     FIRE_RATE: 0.2,
     START_X: 320, // 1/4 of canvas width
-    START_Y: 240  // 1/3 of canvas height
+    START_Y: 240,  // 1/3 of canvas height
+    LIVES: 3  // Starting number of lives
 };
 
 export const ENEMY_CONFIG = {

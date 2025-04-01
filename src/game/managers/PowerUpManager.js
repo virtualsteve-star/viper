@@ -1,4 +1,5 @@
 import { POWER_UP_CONFIG } from '../constants';
+import { GAME_STATES } from '../constants';
 
 export default class PowerUpManager {
     constructor(game) {
@@ -53,16 +54,16 @@ export default class PowerUpManager {
             this.stargateEffect.rotation = (this.stargateEffect.rotation || 0) + Math.PI * deltaTime;
             this.stargateEffect.vortexRotation = (this.stargateEffect.vortexRotation || 0) + Math.PI * 2 * deltaTime;
             
-            // Update radius with clamped values
-            const maxRadius = this.game.canvas.width / 2;
+            // Always expand the radius during the effect
+            const maxRadius = Math.max(this.game.canvas.width, this.game.canvas.height) * 1.5;
             this.stargateEffect.radius = Math.min(
-                this.stargateEffect.radius + 600 * deltaTime,
+                this.stargateEffect.radius + 500 * deltaTime, // Slowed down expansion speed from 600 to 500
                 maxRadius
             );
             
-            // Only start fading after level-up message has been shown
-            if (this.stargateEffect.levelUpStarted && !this.game.isLevelUp) {
-                this.stargateEffect.opacity = Math.max(0, this.stargateEffect.opacity - deltaTime * 2);
+            // Only fade out after level-up is complete and GET_READY is starting
+            if (this.stargateEffect.levelUpStarted) {
+                this.stargateEffect.opacity = Math.max(0, this.stargateEffect.opacity - deltaTime * 0.7); // Slowed down fade out
                 if (this.stargateEffect.opacity <= 0) {
                     this.stargateEffect = null;
                 }
@@ -209,27 +210,40 @@ export default class PowerUpManager {
                         y: stargate.y + stargate.height/2,
                         width: stargate.width,
                         height: stargate.height,
-                        radius: Math.max(stargate.width, stargate.height) / 2,
+                        radius: Math.max(stargate.width, stargate.height) / 2, // Start with stargate size
                         opacity: 1,
                         time: 0,
                         rotation: stargate.rotation || 0,
                         vortexRotation: stargate.vortexRotation || 0,
-                        levelUpStarted: false // Track if level-up has started
+                        levelUpStarted: false, // Track if level-up has started
+                        showLevelUp: true // Flag to show level up banner
                     };
+
                     // Make the player start fading
                     this.game.player.startFadeOut();
-                }
-                // Start level-up sequence after effect completes
-                setTimeout(() => {
+                    
+                    // Show Level Up banner immediately
                     this.game.isLevelUp = true;
                     this.game.levelUpStartTime = this.game.currentTime;
+                }
+                
+                // Start Get Ready sequence after effect completes
+                setTimeout(() => {
+                    // Increment level before starting Get Ready sequence
                     this.game.level++;
                     this.gameTime = 0;
                     this.game.player.reset();
-                    if (this.stargateEffect) {
-                        this.stargateEffect.levelUpStarted = true;
-                    }
-                }, 2000);
+                    
+                    // Ensure stargate effect is completely cleared
+                    this.stargateEffect = null;
+                    
+                    // Start Get Ready sequence
+                    this.game.state = GAME_STATES.GET_READY;
+                    this.game.getReadyFlashCount = 0;
+                    this.game.getReadyPhase = 0;
+                    this.game.getReadyTimer = 0;
+                    this.game.getReadyAlpha = 0;
+                }, 3500); // Increased from 2000 to 3500 milliseconds
                 break;
         }
     }
@@ -248,38 +262,89 @@ export default class PowerUpManager {
     }
 
     render(ctx) {
-        // First render any active stargate effect
+        // Render all power-ups
+        this.powerUps.forEach(powerUp => {
+            ctx.save();
+            ctx.translate(powerUp.x + powerUp.width/2, powerUp.y + powerUp.height/2);
+            
+            if (powerUp.type === 'STARGATE') {
+                // Draw vortex first (behind stargate)
+                const vortexSprite = this.game.spriteLoader.getSprite('vortex');
+                const stargateSprite = this.game.spriteLoader.getSprite('stargate');
+                
+                if (vortexSprite && stargateSprite) {
+                    // Draw vortex
+                    ctx.save();
+                    ctx.rotate(powerUp.vortexRotation);
+                    ctx.drawImage(
+                        vortexSprite.image,
+                        -powerUp.width/2,
+                        -powerUp.height/2,
+                        powerUp.width,
+                        powerUp.height
+                    );
+                    ctx.restore();
+                    
+                    // Draw stargate
+                    ctx.rotate(powerUp.rotation);
+                    ctx.drawImage(
+                        stargateSprite.image,
+                        -powerUp.width/2,
+                        -powerUp.height/2,
+                        powerUp.width,
+                        powerUp.height
+                    );
+                }
+            } else {
+                // Draw regular power-ups
+                const spriteName = powerUp.type === 'SHIELD' ? 'shield' : 'life';
+                const sprite = this.game.spriteLoader.getSprite(spriteName);
+                if (sprite) {
+                    ctx.drawImage(
+                        sprite.image,
+                        -powerUp.width/2,
+                        -powerUp.height/2,
+                        powerUp.width,
+                        powerUp.height
+                    );
+                }
+            }
+            ctx.restore();
+        });
+
+        // Render stargate effect if active
         if (this.stargateEffect) {
             ctx.save();
+            ctx.translate(this.stargateEffect.x, this.stargateEffect.y);
             
-            // Draw the stargate sprite
+            // Draw the blue halo effect first
+            ctx.globalCompositeOperation = 'screen';
+            const radius = this.stargateEffect.radius;
+            if (radius > 0 && isFinite(radius)) {
+                const gradient = ctx.createRadialGradient(
+                    0, 0, radius * 0.1,
+                    0, 0, radius
+                );
+                gradient.addColorStop(0, `rgba(0, 196, 255, ${0.8 * this.stargateEffect.opacity})`);
+                gradient.addColorStop(0.3, `rgba(0, 128, 255, ${0.5 * this.stargateEffect.opacity})`);
+                gradient.addColorStop(1, 'rgba(0, 64, 255, 0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Draw stargate with rotation
             const stargate = this.game.spriteLoader.getSprite('stargate');
             const vortex = this.game.spriteLoader.getSprite('vortex');
             
             if (stargate && vortex) {
-                ctx.translate(this.stargateEffect.x, this.stargateEffect.y);
-                
-                // Draw vortex first (behind stargate)
-                ctx.save();
-                ctx.rotate(this.stargateEffect.vortexRotation);
+                // Draw stargate with opacity
                 ctx.globalAlpha = this.stargateEffect.opacity;
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(
-                    vortex.image,
-                    -this.stargateEffect.width/2,
-                    -this.stargateEffect.height/2,
-                    this.stargateEffect.width,
-                    this.stargateEffect.height
-                );
-                ctx.restore();
+                ctx.globalCompositeOperation = 'source-over';
                 
-                // Draw stargate on top
-                ctx.save();
-                ctx.rotate(this.stargateEffect.rotation);
-                ctx.globalAlpha = this.stargateEffect.opacity;
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
+                // Draw stargate
+                ctx.rotate(this.stargateEffect.rotation * Math.PI / 180);
                 ctx.drawImage(
                     stargate.image,
                     -this.stargateEffect.width/2,
@@ -287,83 +352,48 @@ export default class PowerUpManager {
                     this.stargateEffect.width,
                     this.stargateEffect.height
                 );
-                ctx.restore();
                 
-                // Draw the blue halo effect
-                const radius = this.stargateEffect.radius;
-                if (radius > 0 && isFinite(radius)) {
-                    ctx.beginPath();
-                    const gradient = ctx.createRadialGradient(
-                        0, 0, radius * 0.1,
-                        0, 0, radius
-                    );
-                    gradient.addColorStop(0, `rgba(0, 196, 255, ${0.8 * this.stargateEffect.opacity})`);
-                    gradient.addColorStop(0.3, `rgba(0, 128, 255, ${0.5 * this.stargateEffect.opacity})`);
-                    gradient.addColorStop(1, 'rgba(0, 64, 255, 0)');
-                    ctx.fillStyle = gradient;
-                    ctx.arc(0, 0, radius, 0, Math.PI * 2);
-                    ctx.fill();
-                }
+                // Draw vortex with additional rotation
+                ctx.rotate(this.stargateEffect.vortexRotation * Math.PI / 180);
+                ctx.drawImage(
+                    vortex.image,
+                    -this.stargateEffect.width/2,
+                    -this.stargateEffect.height/2,
+                    this.stargateEffect.width,
+                    this.stargateEffect.height
+                );
             }
-            
             ctx.restore();
-        }
 
-        // Then render regular power-ups if stargate effect is not active
-        if (!this.stargateEffect) {
-            this.powerUps.forEach(powerUp => {
-                if (!powerUp.collected) {
+            // Draw Level Up banner if we should show it
+            if (this.stargateEffect.showLevelUp) {
+                const levelUp = this.game.spriteLoader.getSprite('levelUp');
+                if (levelUp) {
                     ctx.save();
-                    ctx.translate(powerUp.x + powerUp.width/2, powerUp.y + powerUp.height/2);
+                    ctx.globalAlpha = this.stargateEffect.opacity;
                     
-                    if (powerUp.type === 'STARGATE') {
-                        // Draw vortex first (behind stargate)
-                        const vortexSprite = this.game.spriteLoader.getSprite('vortex');
-                        const stargateSprite = this.game.spriteLoader.getSprite('stargate');
-                        
-                        if (vortexSprite && stargateSprite) {
-                            ctx.save();
-                            ctx.rotate(powerUp.vortexRotation);
-                            ctx.imageSmoothingEnabled = true;
-                            ctx.imageSmoothingQuality = 'high';
-                            ctx.drawImage(
-                                vortexSprite.image,
-                                -powerUp.width/2,
-                                -powerUp.height/2,
-                                powerUp.width,
-                                powerUp.height
-                            );
-                            ctx.restore();
-                            
-                            // Draw stargate
-                            ctx.rotate(powerUp.rotation);
-                            ctx.imageSmoothingEnabled = true;
-                            ctx.imageSmoothingQuality = 'high';
-                            ctx.drawImage(
-                                stargateSprite.image,
-                                -powerUp.width/2,
-                                -powerUp.height/2,
-                                powerUp.width,
-                                powerUp.height
-                            );
-                        }
-                    } else {
-                        const sprite = this.game.spriteLoader.getSprite(powerUp.type.toLowerCase());
-                        if (sprite) {
-                            ctx.imageSmoothingEnabled = true;
-                            ctx.imageSmoothingQuality = 'high';
-                            ctx.drawImage(
-                                sprite.image,
-                                -powerUp.width/2,
-                                -powerUp.height/2,
-                                powerUp.width,
-                                powerUp.height
-                            );
-                        }
-                    }
+                    // Scale banner to be about 30% of canvas width
+                    const bannerScale = this.game.canvas.width * 0.3 / levelUp.width;
+                    const bannerWidth = levelUp.width * bannerScale;
+                    const bannerHeight = levelUp.height * bannerScale;
+                    
+                    // Center the banner and make it pulse
+                    const pulseScale = 1 + Math.sin(this.stargateEffect.time * 5) * 0.1;
+                    const finalWidth = bannerWidth * pulseScale;
+                    const finalHeight = bannerHeight * pulseScale;
+                    
+                    // Draw the banner centered on screen
+                    ctx.drawImage(
+                        levelUp.image,
+                        this.game.canvas.width/2 - finalWidth/2,
+                        this.game.canvas.height/2 - finalHeight/2,
+                        finalWidth,
+                        finalHeight
+                    );
+                    
                     ctx.restore();
                 }
-            });
+            }
         }
     }
 
