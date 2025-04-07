@@ -1,5 +1,7 @@
 # Viper
 
+Copyright (c) 2025 Steve Wilson
+
 A modern take on the classic arcade game, built with JavaScript and HTML5 Canvas.
 
 ## Description
